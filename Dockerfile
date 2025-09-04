@@ -1,4 +1,3 @@
-# Use the official PHP image with Apache
 FROM php:8.2-apache
 
 # Install system dependencies and PHP extensions
@@ -17,20 +16,19 @@ COPY . .
 
 # Install Composer
 COPY --from=composer:2.6 /usr/bin/composer /usr/bin/composer
-
-# Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html/storage
+    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Expose port 80
-EXPOSE 80
+# Configure Apache to use Laravel's public directory as root
+RUN sed -i 's|/var/www/html|/var/www/html/public|g' /etc/apache2/sites-available/000-default.conf \
+    && sed -i 's|/var/www/html|/var/www/html/public|g' /etc/apache2/apache2.conf
 
-# Run Apache
-CMD ["apache2-foreground"]
+# Make Apache listen on Render's port
+RUN sed -i "s/80/${PORT}/g" /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf
 
-# Render needs to map container's 10000 port
 EXPOSE 10000
-CMD ["apache2-foreground", "-DFOREGROUND", "-k", "start", "-e", "info", "-E", "info"]
+
+CMD ["apache2-foreground"]
