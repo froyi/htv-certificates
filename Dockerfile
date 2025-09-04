@@ -30,3 +30,7 @@ EXPOSE 80
 
 # Run Apache
 CMD ["apache2-foreground"]
+
+# Render needs to map container's 10000 port
+EXPOSE 10000
+CMD ["apache2-foreground", "-DFOREGROUND", "-k", "start", "-e", "info", "-E", "info"]
