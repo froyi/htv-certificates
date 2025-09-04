@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y \
 # Enable Apache rewrite module
 RUN a2enmod rewrite
 
-# Set working directory
 WORKDIR /var/www/html
 
 # Copy project files
@@ -26,9 +25,10 @@ RUN chown -R www-data:www-data /var/www/html \
 RUN sed -i 's|/var/www/html|/var/www/html/public|g' /etc/apache2/sites-available/000-default.conf \
     && sed -i 's|/var/www/html|/var/www/html/public|g' /etc/apache2/apache2.conf
 
-# Make Apache listen on Render's port
-RUN sed -i "s/80/${PORT}/g" /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 10000
 
-CMD ["apache2-foreground"]
+CMD ["docker-entrypoint.sh"]
