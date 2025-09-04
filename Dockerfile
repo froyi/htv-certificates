@@ -13,6 +13,11 @@ WORKDIR /var/www/html
 # Copy project files
 COPY . .
 
+RUN touch /var/www/html/database/database.sqlite && \
+    chown www-data:www-data /var/www/html/database/database.sqlite && \
+    chmod 664 /var/www/html/database/database.sqlite
+
+
 # Install Composer
 COPY --from=composer:2.6 /usr/bin/composer /usr/bin/composer
 RUN composer install --no-dev --optimize-autoloader
