@@ -22,6 +22,7 @@ RUN touch /var/www/html/database/database.sqlite && \
 # Install Composer
 COPY --from=composer:2.6 /usr/bin/composer /usr/bin/composer
 RUN composer install --no-dev --optimize-autoloader
+RUN php artisan storage:link || true
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html \
