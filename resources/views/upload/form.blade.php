@@ -25,7 +25,7 @@
                 <div class="card-body">
                     <h1 class="h4 mb-3">CSV hochladen und PDF erzeugen</h1>
                     <p class="text-muted">Erwartete Spalten: <strong>Vorname</strong>, <strong>Name</strong>, <strong>Verein</strong>, <strong>Altersklasse</strong>, <strong>Punkte</strong>, <strong>Platz</strong>. Eine erste Kopfzeile ist optional. Ohne Kopfzeile muss die Spaltenreihenfolge genau wie hier angegeben sein.</p>
-
+                    <p class="text-muted">Beim Excel Export darauf achten, dass es im Format .csv gespeichert wird. Wichtig ist die CSV UTF-8 Variante zu nehmen.</p>
                     @if ($errors->any())
                         <div class="alert alert-danger">
                             <ul class="mb-0">
@@ -49,17 +49,6 @@
                             <button class="btn btn-primary" type="submit">PDF erzeugen</button>
                         </div>
                     </form>
-
-                    <hr class="my-4">
-                    <div>
-                        <h2 class="h6">Hinweise</h2>
-                        <ul class="small text-muted">
-                            <li>Die Vorlage <code>template_brass.pdf</code> muss vorhanden sein unter <code>storage/app/public</code> (empfohlen), <code>storage/app/private</code> oder <code>resources/templates</code>.</li>
-                            <li>Falls die Meldung „pdftk: command not found“ erscheint, installieren Sie bitte pdftk (macOS: <code>brew install pdftk-java</code>, Debian/Ubuntu: <code>sudo apt-get install pdftk-java</code>) oder setzen Sie <code>PDFTK_PATH</code> in der <code>.env</code> auf den absoluten Pfad.</li>
-                            <li>Umlaute werden unterstützt (UTF-8).</li>
-                            <li>Nach dem Upload wird automatisch eine Sammel-PDF erzeugt und als Download angeboten.</li>
-                        </ul>
-                    </div>
                 </div>
             </div>
         </div>

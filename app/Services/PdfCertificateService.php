@@ -128,6 +128,7 @@ class PdfCertificateService
             $first = trim((string) ($row['Vorname'] ?? ''));
             $last = trim((string) ($row['Name'] ?? ''));
             $fullName = trim($first.' '.$last);
+
             $data['name'] = $this->toUtf8($fullName);
 
             // Map remaining CSV columns via fieldMap
@@ -135,6 +136,14 @@ class PdfCertificateService
                 $value = (string) ($row[$csvColumn] ?? '');
                 $data[$pdfField] = $this->toUtf8($value);
             }
+
+            empty($data['club']) && $data['club'] = '';
+
+            $normalized = str_replace(',', '.', $data['ranking']);
+            $float = (float) $normalized;
+            $data['ranking'] = (int) ceil($float) . '.';
+
+            $data['ageGroup'] = 'AK ' . $data['ageGroup'];
 
             $data['today'] = $today;
 
@@ -182,7 +191,7 @@ class PdfCertificateService
     private function toUtf8(string $value): string
     {
         if (! mb_check_encoding($value, 'UTF-8')) {
-            $value = mb_convert_encoding($value, 'UTF-8');
+            $value = mb_convert_encoding($value, 'Windows-1252', 'UTF-8');
         }
 
         return $value;
