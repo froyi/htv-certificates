@@ -24,7 +24,7 @@
             <div class="card shadow-sm">
                 <div class="card-body">
                     <h1 class="h4 mb-3">CSV hochladen und PDF erzeugen</h1>
-                    <p class="text-muted">Erwartete Spalten: <strong>Vorname</strong>, <strong>Name</strong>, <strong>Verein</strong>, <strong>Altersklasse</strong>, <strong>Punkte</strong>, <strong>Platz</strong>. Eine erste Kopfzeile ist optional. Ohne Kopfzeile muss die Spaltenreihenfolge genau wie hier angegeben sein.</p>
+                    <p class="text-muted">Erwartete Spalten: <strong>firstname</strong>, <strong>name</strong>, <strong>club</strong>, <strong>ageGroup</strong>, <strong>vault</strong>, <strong>unevenBars</strong>, <strong>balanceBeam</strong>, <strong>floor</strong>. Eine erste Kopfzeile ist optional. Ohne Kopfzeile muss die Spaltenreihenfolge genau wie hier angegeben sein.</p>
                     <p class="text-muted">Beim Excel Export darauf achten, dass es im Format .csv gespeichert wird. Wichtig ist die CSV UTF-8 Variante zu nehmen.</p>
                     @if ($errors->any())
                         <div class="alert alert-danger">
@@ -44,6 +44,23 @@
                             @error('file')
                             <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-12">
+                                <label class="form-label">Welche Urkunden sollen erzeugt werden?</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="single" name="single" value="1" {{ old('single', '1') ? 'checked' : '' }}>
+                                    <label class="form-check-label" for="single">
+                                        Einzelwertung
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="team" name="team" value="1" {{ old('team') ? 'checked' : '' }}>
+                                    <label class="form-check-label" for="team">
+                                        Mannschaftswertung
+                                    </label>
+                                </div>
+                            </div>
                         </div>
                         <div class="d-grid gap-2">
                             <button class="btn btn-primary" type="submit">PDF erzeugen</button>

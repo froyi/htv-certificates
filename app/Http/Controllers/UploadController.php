@@ -11,15 +11,36 @@ use Illuminate\View\View;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Response as HttpResponse;
 
+/**
+ * Handle the upload form and dispatch certificate generation.
+ *
+ * - Validates CSV uploads and checkbox selections via UploadCsvRequest.
+ * - Calls PdfCertificateService to generate single and/or team PDFs.
+ * - Merges PDFs if both are selected and responds with a download.
+ */
 class UploadController extends Controller
 {
     public function __construct(public PdfCertificateService $service) {}
 
+    /**
+     * Show the upload form.
+     */
     public function form(): View
     {
         return view('upload.form');
     }
 
+    /**
+     * Handle the upload submission and return the generated PDF as a download.
+     *
+     * Flow:
+     * - Store uploaded CSV temporarily.
+     * - Generate selected PDFs (single/team) via PdfCertificateService.
+     * - If both are selected, merge PDFs and delete intermediates.
+     * - Stream the final PDF and delete temp files.
+     *
+     * @throws RuntimeException
+     */
     public function process(UploadCsvRequest $request): HttpResponse
     {
         $uploaded = $request->file('file');
@@ -31,7 +52,27 @@ class UploadController extends Controller
         $absolutePath = Storage::path($path);
 
         try {
-            $finalPdf = $this->service->generateFromCsv($absolutePath);
+            $paths = [];
+            $generateSingle = $request->boolean('single');
+            $generateTeam = $request->boolean('team');
+
+            if ($generateSingle) {
+                $paths[] = $this->service->generateFromCsv($absolutePath);
+            }
+            if ($generateTeam) {
+                $paths[] = $this->service->generateTeamFromCsv($absolutePath);
+            }
+
+            // If both selected, merge into one file for a single download
+            if (count($paths) === 1) {
+                $finalPdf = $paths[0];
+            } else {
+                $finalPdf = $this->service->mergePdfs($paths);
+                // Cleanup the individual PDFs after merge
+                foreach ($paths as $p) {
+                    @unlink($p);
+                }
+            }
         } catch (RuntimeException $e) {
             return back()->withErrors(['file' => $e->getMessage()])->withInput();
         } finally {
