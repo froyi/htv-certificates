@@ -23,11 +23,11 @@ class PdfCertificateServiceTest extends TestCase
 
     public function test_single_results_compute_points_and_shared_ranking_with_header_and_comma_delimiter(): void
     {
-        $csv = "firstname,name,club,ageGroup,vault,unevenBars,balanceBeam,floor\n".
-            "Alice,Alpha,Club A,10,10,10,10,10\n".
-            "Bob,Beta,Club B,10,12,8,10,10\n".
+        $csv = "firstname,name,club,team,ageGroup,vault,unevenBars,balanceBeam,floor\n".
+            "Alice,Alpha,Club A,Team A,10,10,10,10,10\n".
+            "Bob,Beta,Club B,Team A,10,12,8,10,10\n".
             // Charlie has same total as Alice (40)
-            "Charlie,Gamma,Club C,10,9,11,10,10\n";
+            "Charlie,Gamma,Club C,Team A,10,9,11,10,10\n";
         $path = $this->makeTmpCsv($csv);
 
         $service = app(PdfCertificateService::class);
@@ -46,8 +46,8 @@ class PdfCertificateServiceTest extends TestCase
 
     public function test_single_results_without_header_and_semicolon_delimiter(): void
     {
-        $csv = "Alice;Alpha;Club A;10;10;10;10;10\n".
-            "Bob;Beta;Club B;10;12;8;10;10\n";
+        $csv = "Alice;Alpha;Club A;Team A;10;10;10;10;10\n".
+            "Bob;Beta;Club B;Team B;10;12;8;10;10\n";
         $path = $this->makeTmpCsv($csv);
 
         $service = app(PdfCertificateService::class);
@@ -58,23 +58,27 @@ class PdfCertificateServiceTest extends TestCase
         $this->assertSame('40,00', $results[0]['points']);
     }
 
-    public function test_team_results_excludes_empty_clubs_and_groups_by_age_with_best_three_per_discipline_and_shared_ranking(): void
+    public function test_team_results_group_by_team_only_with_best_three_per_discipline_and_shared_ranking(): void
     {
-        // Two age groups for Club X; include placeholders for club to be ignored
+        // Build three teams via the 'team' column; include placeholder teams to be ignored
         $rows = [
-            ['Ann', 'A', 'Club X', '10', '10', '9', '8', '7'],
-            ['Ben', 'B', 'Club X', '10', '9', '9', '9', '9'],
-            ['Cat', 'C', 'Club X', '10', '8', '8', '8', '8'],
-            ['Dan', 'D', 'Club X', '10', '7', '7', '7', '7'], // fourth member should be ignored by best-3 rule
-            ['Eve', 'E', '0', '10', '10', '10', '10', '10'],  // ignored: club placeholder "0"
-            ['Finn', 'F', '-', '10', '10', '10', '10', '10'],  // ignored: club placeholder "-"
-            ['Gwen', 'G', 'Club X', '12', '6', '6', '6', '6'], // different ageGroup -> separate team
-            ['Hank', 'H', 'Club Y', '10', '9', '9', '9', '9'],
-            ['Ivy', 'I', 'Club Y', '10', '9', '9', '9', '9'],
-            ['Jay', 'J', 'Club Y', '10', '9', '9', '9', '9'],
-            ['Kim', 'K', 'Club Y', '10', '1', '1', '1', '1'], // 4th member ignored by best-3
+            // Team X 10 (four members, best 3 count)
+            ['Ann', 'A', 'Club X', 'Team X 10', '10', '10', '9', '8', '7'],
+            ['Ben', 'B', 'Club X', 'Team X 10', '10', '9', '9', '9', '9'],
+            ['Cat', 'C', 'Club X', 'Team X 10', '10', '8', '8', '8', '8'],
+            ['Dan', 'D', 'Club X', 'Team X 10', '10', '7', '7', '7', '7'],
+            // Placeholders (ignored due to empty/placeholder team)
+            ['Eve', 'E', 'Club Z', '0', '10', '10', '10', '10', '10'],
+            ['Finn', 'F', 'Club Z', '-', '10', '10', '10', '10', '10'],
+            // Team X 12 (different age)
+            ['Gwen', 'G', 'Club X', 'Team X 12', '12', '6', '6', '6', '6'],
+            // Team Y 10 (three strong + one weak)
+            ['Hank', 'H', 'Club Y', 'Team Y 10', '10', '9', '9', '9', '9'],
+            ['Ivy', 'I', 'Club Y', 'Team Y 10', '10', '9', '9', '9', '9'],
+            ['Jay', 'J', 'Club Y', 'Team Y 10', '10', '9', '9', '9', '9'],
+            ['Kim', 'K', 'Club Y', 'Team Y 10', '10', '1', '1', '1', '1'],
         ];
-        $csv = "firstname,name,club,ageGroup,vault,unevenBars,balanceBeam,floor\n";
+        $csv = "firstname,name,club,team,ageGroup,vault,unevenBars,balanceBeam,floor\n";
         foreach ($rows as $r) {
             $csv .= implode(',', $r)."\n";
         }
@@ -83,32 +87,30 @@ class PdfCertificateServiceTest extends TestCase
         $service = app(PdfCertificateService::class);
         $teams = $service->computeTeamResultsFromCsv($path);
 
-        // Expect three teams: Club X AK10, Club X AK12, Club Y AK10
+        // Expect three teams: Team X 10, Team X 12, Team Y 10
         $this->assertCount(3, $teams);
 
         // Map for easier checks
         $map = [];
         foreach ($teams as $t) {
-            $map[$t['club'].'|'.$t['ageGroup']] = $t;
+            $map[$t['team'].'|'.$t['ageGroup']] = $t;
         }
-        $this->assertArrayHasKey('Club X|AK 10', $map);
-        $this->assertArrayHasKey('Club X|AK 12', $map);
-        $this->assertArrayHasKey('Club Y|AK 10', $map);
+        $this->assertArrayHasKey('Team X 10|AK 9-11', $map);
+        $this->assertArrayHasKey('Team X 12|AK 12', $map);
+        $this->assertArrayHasKey('Team Y 10|AK 9-11', $map);
 
-        // Club X AK10: take best 3 per discipline from first 4 athletes: (10,9,8),(9,9,8),(9,9,8),(7,7,7) -> top3 sums
-        // vault: 10+9+8=27; uneven: 9+9+8=26; beam: 9+9+8=26; floor: 9+9+8=26; total=105
-        $this->assertSame('102,00', $map['Club X|AK 10']['points']);
+        // Team X 10: best 3 per discipline from first 4 athletes -> 27 + 26 + 26 + 26 = 105
+        $this->assertSame('102,00', $map['Team X 10|AK 9-11']['points']);
 
-        // Club Y AK10: three times 9 in all four -> 27 per discipline -> total=108 should beat Club X AK10
-        $this->assertSame('108,00', $map['Club Y|AK 10']['points']);
+        // Team Y 10: three times 9 in all four -> 27 per discipline -> total=108 should beat Team X 10
+        $this->assertSame('108,00', $map['Team Y 10|AK 9-11']['points']);
 
         // Rankings should reflect ordering with highest points = rank 1
-        // Ensure top team has rank 1
         $top = $teams[0];
         $this->assertSame(1, $top['ranking']);
 
         // Names should include team members and be a comma-separated string
-        $this->assertStringContainsString('Ann A', $map['Club X|AK 10']['names']);
-        $this->assertStringContainsString('Ben B', $map['Club X|AK 10']['names']);
+        $this->assertStringContainsString('Ann A', $map['Team X 10|AK 9-11']['names']);
+        $this->assertStringContainsString('Ben B', $map['Team X 10|AK 9-11']['names']);
     }
 }

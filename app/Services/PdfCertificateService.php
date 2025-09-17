@@ -15,14 +15,14 @@ use RuntimeException;
  * Responsibilities:
  * - Read CSV files (with or without header) in the expected column order.
  * - Compute single total points (sum of four disciplines) and apply standard competition ranking (ties share place).
- * - Compute team totals by club and age group (top 3 scores per discipline) and apply shared ranking.
+ * - Compute team totals by team (top 3 scores per discipline) and apply shared ranking.
  * - Fill PDF form templates (single and team) via pdftk and merge results into a single PDF.
  * - Provide pure-computation helpers (computeSingleResultsFromCsv/computeTeamResultsFromCsv) used by tests and for diagnostics.
  *
  * Key rules:
- * - Expected CSV headers: firstname, name, club, ageGroup, vault, unevenBars, balanceBeam, floor.
+ * - Expected CSV headers: firstname, name, club, team, ageGroup, vault, unevenBars, balanceBeam, floor.
  * - Decimal separator in inputs may be ',' or '.'; outputs always use comma with two decimals (e.g., 51,50).
- * - Clubs deemed empty or placeholder (e.g., "0", "-", "ohne verein") are excluded from team scoring.
+ * - Teams deemed empty or placeholder (e.g., "0", "-", "ohne verein") are excluded from team scoring.
  */
 class PdfCertificateService
 {
@@ -35,6 +35,7 @@ class PdfCertificateService
         'firstname',
         'name',
         'club',
+        'team',
         'ageGroup',
         'vault',
         'unevenBars',
@@ -112,31 +113,25 @@ class PdfCertificateService
         $readerWithHeader->setHeaderOffset(0);
 
         $expectedHeaders = $this->expectedHeaders;
-        $headers = $readerWithHeader->getHeader();
-
-        $useHeaderMode = true;
-        if (empty($headers)) {
-            $useHeaderMode = false;
-        } else {
-            // Determine if expected headers are present (case-sensitive match)
-            $missing = array_diff($expectedHeaders, $headers);
-            if (! empty($missing)) {
-                $useHeaderMode = false;
-            }
+        try {
+            $headers = $readerWithHeader->getHeader();
+        } catch (\Throwable $e) {
+            $headers = [];
         }
 
+        $useHeaderMode = $this->looksLikeHeader(is_array($headers) ? $headers : []);
+
         if ($useHeaderMode) {
-            // Header present and valid
+            // Header present: keep associative records
             $records = iterator_to_array($readerWithHeader->getRecords());
         } else {
-            // Fallback: no header row, map by positional order according to expected headers
+            // Fallback: no header row, map by positional order according to required headers (new format)
             $readerNoHeader = Reader::createFromPath($csvPath, 'r');
             $readerNoHeader->setDelimiter($delimiter);
 
             $rows = iterator_to_array($readerNoHeader->getRecords());
             $records = [];
             foreach ($rows as $row) {
-                // $row is a numerically indexed array in no-header mode
                 $assoc = [];
                 $i = 0;
                 foreach ($expectedHeaders as $headerName) {
@@ -228,7 +223,7 @@ class PdfCertificateService
                 ->saveAs($outputFile);
 
             if (! $ok) {
-                $err = (string) $pdf->getError();
+                $err = $pdf->getError();
                 if ((str_contains($err, 'pdftk') || str_contains($err, 'pdftk-java')) && (str_contains($err, 'not found') || str_contains($err, 'No such file') || str_contains($err, 'could not be found'))) {
                     throw new RuntimeException('PDF-Erstellung fehlgeschlagen: Das pdftk-Binary wurde nicht gefunden. Bitte installieren Sie pdftk (z. B. macOS: "brew install pdftk-java", Debian/Ubuntu: "sudo apt-get install pdftk-java") oder setzen Sie PDFTK_PATH in der .env auf den absoluten Pfad zum Binary. Ursprünglicher Fehler: '.$err);
                 }
@@ -265,11 +260,11 @@ class PdfCertificateService
      * Processing steps:
      * 1) Locate the team certificate PDF template (template_brass_team.pdf).
      * 2) Detect CSV delimiter and load records (header-aware or positional fallback) using expected columns.
-     * 3) Exclude rows with empty/placeholder clubs.
-     * 4) Group rows by club and ageGroup; collect discipline scores and member names.
+     * 3) Exclude rows with empty/placeholder teams.
+     * 4) Group rows by team only (ageGroup is ignored for grouping); collect discipline scores and member names.
      * 5) For each group: sort scores per discipline, sum the top 3 per discipline, sum across disciplines to get totals.
      * 6) Rank groups with shared-ranking (ties share the same rank).
-     * 7) Fill the PDF per group including club, ageGroup (prefixed with "AK "), names (comma-separated), total points, and rank.
+     * 7) Fill the PDF per group including team, ageGroup (prefixed with "AK "), names (comma-separated), total points, and rank.
      * 8) Merge all generated PDFs and clean up.
      *
      * @param  string  $csvPath  Absolute path to the uploaded CSV file.
@@ -305,17 +300,13 @@ class PdfCertificateService
         $readerWithHeader->setHeaderOffset(0);
 
         $expectedHeaders = $this->expectedHeaders;
-        $headers = $readerWithHeader->getHeader();
-
-        $useHeaderMode = true;
-        if ($headers === null || empty($headers)) {
-            $useHeaderMode = false;
-        } else {
-            $missing = array_diff($expectedHeaders, $headers);
-            if (! empty($missing)) {
-                $useHeaderMode = false;
-            }
+        try {
+            $headers = $readerWithHeader->getHeader();
+        } catch (\Throwable $e) {
+            $headers = [];
         }
+
+        $useHeaderMode = $this->looksLikeHeader(is_array($headers) ? $headers : []);
 
         if ($useHeaderMode) {
             $records = iterator_to_array($readerWithHeader->getRecords());
@@ -335,27 +326,33 @@ class PdfCertificateService
             }
         }
 
-        // Aggregate per club and ageGroup
+        // Aggregate per team (age group is ignored for grouping); team column is required
         $groups = [];
         foreach ($records as $row) {
-            $club = trim((string) ($row['club'] ?? ''));
-            if ($this->isEmptyClub($club)) {
-                continue; // exclude persons without a meaningful club
-            }
+            $team = trim((string) ($row['team'] ?? ''));
             $age = trim((string) ($row['ageGroup'] ?? ''));
-            $key = $club.'|'.$age;
+
+            if ($this->isEmptyClub($team)) {
+                continue; // exclude persons without a meaningful team
+            }
+            $key = $team;
 
             // Initialize structure
             if (! isset($groups[$key])) {
                 $groups[$key] = [
-                    'club' => $club,
+                    'team' => $team,
                     'ageGroup' => $age,
+                    'ageGroups' => [],
                     'vault' => [],
                     'unevenBars' => [],
                     'balanceBeam' => [],
                     'floor' => [],
                     'names' => [],
                 ];
+            }
+            // Track all raw ageGroup values for display decision (e.g., AK 9-11)
+            if ($age !== '') {
+                $groups[$key]['ageGroups'][] = $age;
             }
 
             // Collect scores
@@ -388,7 +385,7 @@ class PdfCertificateService
 
         // Rank groups with tie-sharing ranking
         if (empty($groupTotals)) {
-            throw new RuntimeException('Es konnten keine Mannschaften ermittelt werden. Stellen Sie sicher, dass in der CSV Vereine (club) gepflegt sind.');
+            throw new RuntimeException('Es konnten keine Mannschaften ermittelt werden. Stellen Sie sicher, dass in der CSV Mannschaften (team) gepflegt sind.');
         }
         $keys = array_keys($groupTotals);
         usort($keys, function (string $a, string $b) use ($groupTotals): int {
@@ -421,8 +418,10 @@ class PdfCertificateService
         foreach ($keys as $i => $key) {
             $group = $groups[$key];
             $data = [];
-            $data['club'] = $this->toUtf8($group['club']);
-            $data['ageGroup'] = 'AK '.($group['ageGroup'] !== '' ? $group['ageGroup'] : '');
+            // For legacy CSVs without 'team', display the club name in the team field
+            $data['team'] = $this->toUtf8($group['team']);
+            $teamAge = $this->computeTeamDisplayAgeGroup($group['ageGroups'] ?? []);
+            $data['ageGroup'] = 'AK '.($teamAge !== '' ? $teamAge : ($group['ageGroup'] !== '' ? $group['ageGroup'] : ''));
             // Unique, stable ordered names (alphabetical by last name then first name)
             $names = array_values(array_unique($group['names']));
             // Try to sort by last name (word after last space)
@@ -677,6 +676,21 @@ class PdfCertificateService
     }
 
     /**
+     * Heuristically decide if the provided header row contains our expected column names.
+     * Only the new format with a required 'team' column is accepted.
+     */
+    private function looksLikeHeader(array $headers): bool
+    {
+        if (empty($headers)) {
+            return false;
+        }
+        $headers = array_map('strval', $headers);
+        $requiredNew = ['firstname', 'name', 'club', 'team', 'ageGroup', 'vault', 'unevenBars', 'balanceBeam', 'floor'];
+
+        return empty(array_diff($requiredNew, $headers));
+    }
+
+    /**
      * Compute single results (without generating PDFs) from a CSV file.
      * Returns an array of rows with: name, club, ageGroup (prefixed with AK ), points (formatted), ranking (number), and raw totals.
      *
@@ -691,17 +705,13 @@ class PdfCertificateService
         $readerWithHeader->setHeaderOffset(0);
 
         $expectedHeaders = $this->expectedHeaders;
-        $headers = $readerWithHeader->getHeader();
-
-        $useHeaderMode = true;
-        if ($headers === null || empty($headers)) {
-            $useHeaderMode = false;
-        } else {
-            $missing = array_diff($expectedHeaders, $headers);
-            if (! empty($missing)) {
-                $useHeaderMode = false;
-            }
+        try {
+            $headers = $readerWithHeader->getHeader();
+        } catch (\Throwable $e) {
+            $headers = [];
         }
+
+        $useHeaderMode = $this->looksLikeHeader(is_array($headers) ? $headers : []);
 
         if ($useHeaderMode) {
             $records = iterator_to_array($readerWithHeader->getRecords());
@@ -776,8 +786,8 @@ class PdfCertificateService
 
     /**
      * Compute team results (without generating PDFs) from a CSV file.
-     * Groups by club+ageGroup, excludes empty/placeholder clubs, sums top 3 per discipline, and ranks with tie-sharing.
-     * Returns array of groups in ranked order with keys: club, ageGroup (prefixed), names (csv string), total (float), points (formatted), ranking (int).
+     * Groups by team only, excludes empty/placeholder teams, sums top 3 per discipline, and ranks with tie-sharing.
+     * Returns array of groups in ranked order with keys: team, ageGroup (prefixed), names (csv string), total (float), points (formatted), ranking (int).
      *
      * @return array<int,array<string,mixed>>
      */
@@ -789,17 +799,13 @@ class PdfCertificateService
         $readerWithHeader->setHeaderOffset(0);
 
         $expectedHeaders = $this->expectedHeaders;
-        $headers = $readerWithHeader->getHeader();
-
-        $useHeaderMode = true;
-        if ($headers === null || empty($headers)) {
-            $useHeaderMode = false;
-        } else {
-            $missing = array_diff($expectedHeaders, $headers);
-            if (! empty($missing)) {
-                $useHeaderMode = false;
-            }
+        try {
+            $headers = $readerWithHeader->getHeader();
+        } catch (\Throwable $e) {
+            $headers = [];
         }
+
+        $useHeaderMode = ! empty($headers);
 
         if ($useHeaderMode) {
             $records = iterator_to_array($readerWithHeader->getRecords());
@@ -819,24 +825,30 @@ class PdfCertificateService
             }
         }
 
+        // Aggregate per team (if 'team' header exists), otherwise fallback to club+age grouping for legacy CSVs
         $groups = [];
         foreach ($records as $row) {
-            $club = trim((string) ($row['club'] ?? ''));
-            if ($this->isEmptyClub($club)) {
+            $team = trim((string) ($row['team'] ?? ''));
+            $age = trim((string) ($row['ageGroup'] ?? ''));
+
+            if ($this->isEmptyClub($team)) {
                 continue;
             }
-            $age = trim((string) ($row['ageGroup'] ?? ''));
-            $key = $club.'|'.$age;
+            $key = $team;
             if (! isset($groups[$key])) {
                 $groups[$key] = [
-                    'club' => $club,
+                    'team' => $team,
                     'ageGroup' => $age,
+                    'ageGroups' => [],
                     'vault' => [],
                     'unevenBars' => [],
                     'balanceBeam' => [],
                     'floor' => [],
                     'names' => [],
                 ];
+            }
+            if ($age !== '') {
+                $groups[$key]['ageGroups'][] = $age;
             }
             $groups[$key]['vault'][] = $this->parseScore((string) ($row['vault'] ?? '0'));
             $groups[$key]['unevenBars'][] = $this->parseScore((string) ($row['unevenBars'] ?? '0'));
@@ -903,9 +915,10 @@ class PdfCertificateService
             });
             $namesStr = implode(', ', array_map(fn ($n) => $this->toUtf8($n), $names));
 
+            $teamAge = $this->computeTeamDisplayAgeGroup($g['ageGroups'] ?? []);
             $out[] = [
-                'club' => $this->toUtf8($g['club']),
-                'ageGroup' => 'AK '.($g['ageGroup'] !== '' ? $g['ageGroup'] : ''),
+                'team' => $this->toUtf8($g['team']),
+                'ageGroup' => 'AK '.($teamAge !== '' ? $teamAge : ($g['ageGroup'] !== '' ? $g['ageGroup'] : '')),
                 'names' => $namesStr,
                 'total' => $groupTotals[$key],
                 'points' => $this->formatPoints($groupTotals[$key]),
@@ -914,5 +927,63 @@ class PdfCertificateService
         }
 
         return $out;
+    }
+
+    /**
+     * Extract the first integer age value from an ageGroup string (e.g., "10" from "10").
+     */
+    private function extractAgeNumber(string $ageGroup): ?int
+    {
+        if ($ageGroup === '') {
+            return null;
+        }
+        if (preg_match('/(\d{1,2})/', $ageGroup, $m) === 1) {
+            $num = (int) $m[1];
+
+            return $num > 0 ? $num : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Compute the display age group for a team.
+     * - If all member ageGroups are numeric and between 9 and 11 (inclusive), returns '9-11'.
+     * - Otherwise returns the most frequent age (mode) among provided values or the first non-empty value.
+     */
+    private function computeTeamDisplayAgeGroup(array $ageGroups): string
+    {
+        $ages = [];
+        foreach ($ageGroups as $ag) {
+            $n = $this->extractAgeNumber((string) $ag);
+            if ($n !== null) {
+                $ages[] = $n;
+            }
+        }
+
+        if (! empty($ages)) {
+            $min = min($ages);
+            $max = max($ages);
+            if ($min >= 9 && $max <= 11) {
+                return '9-11';
+            }
+        }
+
+        // Fallback: pick the most frequent original ageGroup string
+        $counts = [];
+        foreach ($ageGroups as $ag) {
+            $key = (string) $ag;
+            if ($key === '') {
+                continue;
+            }
+            $counts[$key] = ($counts[$key] ?? 0) + 1;
+        }
+        if (! empty($counts)) {
+            arsort($counts);
+
+            return (string) array_key_first($counts);
+        }
+
+        return '';
     }
 }

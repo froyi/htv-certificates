@@ -24,7 +24,7 @@
             <div class="card shadow-sm">
                 <div class="card-body">
                     <h1 class="h4 mb-3">CSV hochladen und PDF erzeugen</h1>
-                    <p class="text-muted">Erwartete Spalten: <strong>firstname</strong>, <strong>name</strong>, <strong>club</strong>, <strong>ageGroup</strong>, <strong>vault</strong>, <strong>unevenBars</strong>, <strong>balanceBeam</strong>, <strong>floor</strong>. Eine erste Kopfzeile ist optional. Ohne Kopfzeile muss die Spaltenreihenfolge genau wie hier angegeben sein.</p>
+                    <p class="text-muted">Erwartete Spalten (in dieser Reihenfolge): <strong>Vorname</strong>, <strong>Nachname</strong>, <strong>Verein</strong>, <strong>Mannschaft</strong>, <strong>Altersklasse</strong>, <strong>Sprung</strong>, <strong>Stufenbarren</strong>, <strong>Schwebebalken</strong>, <strong>Boden</strong>. Eine erste Kopfzeile ist optional. Ohne Kopfzeile muss die Spaltenreihenfolge genau wie hier angegeben sein.</p>
                     <p class="text-muted">Beim Excel Export darauf achten, dass es im Format .csv gespeichert wird. Wichtig ist die CSV UTF-8 Variante zu nehmen.</p>
                     @if ($errors->any())
                         <div class="alert alert-danger">

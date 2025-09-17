@@ -29,7 +29,7 @@ class UploadCsvRequestTest extends TestCase
         $this->withoutMiddleware();
 
         Storage::fake('local');
-        $csvContent = "firstname,name,club,ageGroup,vault,unevenBars,balanceBeam,floor\nA,B,C,10,1,1,1,1\n";
+        $csvContent = "firstname,name,club,team,ageGroup,vault,unevenBars,balanceBeam,floor\nA,B,C,T,10,1,1,1,1\n";
         $file = UploadedFile::fake()->createWithContent('data.csv', $csvContent);
 
         // Neither single nor team selected
