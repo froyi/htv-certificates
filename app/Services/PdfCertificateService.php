@@ -361,11 +361,12 @@ class PdfCertificateService
                 $groups[$key]['ageGroups'][] = $age;
             }
 
-            // Collect scores
-            $groups[$key]['vault'][] = $this->parseScore((string) ($row['vault'] ?? '0'));
-            $groups[$key]['unevenBars'][] = $this->parseScore((string) ($row['unevenBars'] ?? '0'));
-            $groups[$key]['balanceBeam'][] = $this->parseScore((string) ($row['balanceBeam'] ?? '0'));
-            $groups[$key]['floor'][] = $this->parseScore((string) ($row['floor'] ?? '0'));
+            // Collect scores with age for AK 9 enforcement
+            $ageNum = $this->extractAgeNumber($age);
+            $groups[$key]['vault'][] = ['score' => $this->parseScore((string) ($row['vault'] ?? '0')), 'age' => $ageNum];
+            $groups[$key]['unevenBars'][] = ['score' => $this->parseScore((string) ($row['unevenBars'] ?? '0')), 'age' => $ageNum];
+            $groups[$key]['balanceBeam'][] = ['score' => $this->parseScore((string) ($row['balanceBeam'] ?? '0')), 'age' => $ageNum];
+            $groups[$key]['floor'][] = ['score' => $this->parseScore((string) ($row['floor'] ?? '0')), 'age' => $ageNum];
 
             // Collect member full names
             $first = trim((string) ($row['firstname'] ?? ''));
@@ -380,12 +381,12 @@ class PdfCertificateService
         $groupTotals = [];
         foreach ($groups as $key => $disc) {
             $sum = 0.0;
-            $topN = $this->allYearAgeGroups($disc['ageGroups'] ?? []) ? 2 : 3;
+            $isKur = $this->allYearAgeGroups($disc['ageGroups'] ?? []);
+            $topN = $isKur ? 2 : 3;
+            $requireAk9 = (! $isKur) && ($this->computeTeamDisplayAgeGroup($disc['ageGroups'] ?? []) === '9-11');
             foreach (['vault', 'unevenBars', 'balanceBeam', 'floor'] as $d) {
-                $scores = $disc[$d] ?? [];
-                rsort($scores, SORT_NUMERIC);
-                $top = array_slice($scores, 0, $topN);
-                $sum += array_sum($top);
+                $entries = $disc[$d] ?? [];
+                $sum += $this->sumDisciplineWithAk9Rule($entries, $topN, $requireAk9);
             }
             $groupTotals[$key] = $sum;
         }
@@ -861,10 +862,11 @@ class PdfCertificateService
             if ($age !== '') {
                 $groups[$key]['ageGroups'][] = $age;
             }
-            $groups[$key]['vault'][] = $this->parseScore((string) ($row['vault'] ?? '0'));
-            $groups[$key]['unevenBars'][] = $this->parseScore((string) ($row['unevenBars'] ?? '0'));
-            $groups[$key]['balanceBeam'][] = $this->parseScore((string) ($row['balanceBeam'] ?? '0'));
-            $groups[$key]['floor'][] = $this->parseScore((string) ($row['floor'] ?? '0'));
+            $ageNum = $this->extractAgeNumber($age);
+            $groups[$key]['vault'][] = ['score' => $this->parseScore((string) ($row['vault'] ?? '0')), 'age' => $ageNum];
+            $groups[$key]['unevenBars'][] = ['score' => $this->parseScore((string) ($row['unevenBars'] ?? '0')), 'age' => $ageNum];
+            $groups[$key]['balanceBeam'][] = ['score' => $this->parseScore((string) ($row['balanceBeam'] ?? '0')), 'age' => $ageNum];
+            $groups[$key]['floor'][] = ['score' => $this->parseScore((string) ($row['floor'] ?? '0')), 'age' => $ageNum];
 
             $first = trim((string) ($row['firstname'] ?? ''));
             $last = trim((string) ($row['name'] ?? ''));
@@ -877,12 +879,12 @@ class PdfCertificateService
         $groupTotals = [];
         foreach ($groups as $key => $disc) {
             $sum = 0.0;
-            $topN = $this->allYearAgeGroups($disc['ageGroups'] ?? []) ? 2 : 3;
+            $isKur = $this->allYearAgeGroups($disc['ageGroups'] ?? []);
+            $topN = $isKur ? 2 : 3;
+            $requireAk9 = (! $isKur) && ($this->computeTeamDisplayAgeGroup($disc['ageGroups'] ?? []) === '9-11');
             foreach (['vault', 'unevenBars', 'balanceBeam', 'floor'] as $d) {
-                $scores = $disc[$d] ?? [];
-                rsort($scores, SORT_NUMERIC);
-                $top = array_slice($scores, 0, $topN);
-                $sum += array_sum($top);
+                $entries = $disc[$d] ?? [];
+                $sum += $this->sumDisciplineWithAk9Rule($entries, $topN, $requireAk9);
             }
             $groupTotals[$key] = $sum;
         }
@@ -1037,5 +1039,79 @@ class PdfCertificateService
         }
 
         return $hasAny;
+    }
+
+    /**
+     * Sum a discipline's scores selecting the top N entries, optionally enforcing that
+     * at least one of the selected entries is from an AK 9 athlete when required.
+     *
+     * @param  array<int,array{score:float,age:?int}>  $entries
+     */
+    private function sumDisciplineWithAk9Rule(array $entries, int $topN, bool $requireAk9): float
+    {
+        // Normalize entries to expected shape if plain floats are passed for any reason
+        $norm = [];
+        foreach ($entries as $e) {
+            if (is_array($e) && array_key_exists('score', $e)) {
+                $norm[] = ['score' => (float) $e['score'], 'age' => $e['age'] ?? null];
+            } else {
+                $norm[] = ['score' => (float) $e, 'age' => null];
+            }
+        }
+
+        // Sort by score descending
+        usort($norm, function (array $a, array $b): int {
+            if ($a['score'] === $b['score']) {
+                return 0;
+            }
+
+            return $a['score'] > $b['score'] ? -1 : 1;
+        });
+
+        $selected = array_slice($norm, 0, $topN);
+
+        if ($requireAk9) {
+            $hasAk9 = false;
+            foreach ($selected as $s) {
+                if (($s['age'] ?? null) === 9) {
+                    $hasAk9 = true;
+                    break;
+                }
+            }
+            if (! $hasAk9) {
+                // Find best AK 9 candidate from the remaining pool
+                $bestAk9 = null;
+                foreach ($norm as $cand) {
+                    if (($cand['age'] ?? null) === 9) {
+                        $bestAk9 = $cand;
+                        break; // already sorted desc, so first AK9 is best
+                    }
+                }
+                if ($bestAk9 !== null) {
+                    // Replace the lowest scoring non-AK9 in the current selection
+                    $replaceIdx = null;
+                    $lowestScore = INF;
+                    foreach ($selected as $idx => $s) {
+                        if (($s['age'] ?? null) !== 9 && $s['score'] <= $lowestScore) {
+                            $lowestScore = $s['score'];
+                            $replaceIdx = $idx;
+                        }
+                    }
+                    if ($replaceIdx !== null) {
+                        $selected[$replaceIdx] = $bestAk9;
+                    }
+                    // If all selected were AK9 (shouldn't happen due to hasAk9 check) or no non-AK9 to replace,
+                    // we keep the original selection.
+                }
+                // If no AK 9 exists in team for this apparatus, per rule (option C), we keep the top N as-is.
+            }
+        }
+
+        $sum = 0.0;
+        foreach ($selected as $s) {
+            $sum += (float) $s['score'];
+        }
+
+        return $sum;
     }
 }
