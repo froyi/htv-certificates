@@ -15,7 +15,7 @@ use RuntimeException;
  * Responsibilities:
  * - Read CSV files (with or without header) in the expected column order.
  * - Compute single total points (sum of four disciplines) and apply standard competition ranking (ties share place).
- * - Compute team totals by team (top 3 scores per discipline) and apply shared ranking.
+ * - Compute team totals by team (default: top 3 scores per discipline; Kür/year-based teams: top 2 per discipline) and apply shared ranking.
  * - Fill PDF form templates (single and team) via pdftk and merge results into a single PDF.
  * - Provide pure-computation helpers (computeSingleResultsFromCsv/computeTeamResultsFromCsv) used by tests and for diagnostics.
  *
@@ -268,7 +268,7 @@ class PdfCertificateService
      * 2) Detect CSV delimiter and load records (header-aware or positional fallback) using expected columns.
      * 3) Exclude rows with empty/placeholder teams.
      * 4) Group rows by team only (ageGroup is ignored for grouping); collect discipline scores and member names.
-     * 5) For each group: sort scores per discipline, sum the top 3 per discipline, sum across disciplines to get totals.
+     * 5) For each group: sort scores per discipline, sum the top 3 per discipline (Kür/year-based teams: top 2), sum across disciplines to get totals.
      * 6) Rank groups with shared-ranking (ties share the same rank).
      * 7) Fill the PDF per group including team, ageGroup (prefixed with "AK "), names (comma-separated), total points, and rank.
      * 8) Merge all generated PDFs and clean up.
@@ -376,15 +376,16 @@ class PdfCertificateService
             }
         }
 
-        // Compute per-group totals (best 3 per discipline)
+        // Compute per-group totals (best 3 per discipline, or best 2 for Kür teams)
         $groupTotals = [];
         foreach ($groups as $key => $disc) {
             $sum = 0.0;
+            $topN = $this->allYearAgeGroups($disc['ageGroups'] ?? []) ? 2 : 3;
             foreach (['vault', 'unevenBars', 'balanceBeam', 'floor'] as $d) {
                 $scores = $disc[$d] ?? [];
                 rsort($scores, SORT_NUMERIC);
-                $top3 = array_slice($scores, 0, 3);
-                $sum += array_sum($top3);
+                $top = array_slice($scores, 0, $topN);
+                $sum += array_sum($top);
             }
             $groupTotals[$key] = $sum;
         }
@@ -876,11 +877,12 @@ class PdfCertificateService
         $groupTotals = [];
         foreach ($groups as $key => $disc) {
             $sum = 0.0;
+            $topN = $this->allYearAgeGroups($disc['ageGroups'] ?? []) ? 2 : 3;
             foreach (['vault', 'unevenBars', 'balanceBeam', 'floor'] as $d) {
                 $scores = $disc[$d] ?? [];
                 rsort($scores, SORT_NUMERIC);
-                $top3 = array_slice($scores, 0, 3);
-                $sum += array_sum($top3);
+                $top = array_slice($scores, 0, $topN);
+                $sum += array_sum($top);
             }
             $groupTotals[$key] = $sum;
         }
