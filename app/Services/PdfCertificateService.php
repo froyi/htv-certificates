@@ -209,7 +209,13 @@ class PdfCertificateService
             $data['points'] = $this->formatPoints($total);
             $data['ranking'] = ($rankByIndex[$index] ?? 0).'.';
 
-            $data['ageGroup'] = 'AK '.($data['ageGroup'] ?? '');
+            // Age group display: if year-like, show special label; otherwise prefix with AK
+            $rawAge = (string) ($data['ageGroup'] ?? '');
+            if ($this->isYearAgeGroup($rawAge)) {
+                $data['ageGroup'] = 'Kür lt. CdP';
+            } else {
+                $data['ageGroup'] = 'AK '.($rawAge !== '' ? $rawAge : '');
+            }
 
             $data['today'] = $today;
 
@@ -421,7 +427,11 @@ class PdfCertificateService
             // For legacy CSVs without 'team', display the club name in the team field
             $data['team'] = $this->toUtf8($group['team']);
             $teamAge = $this->computeTeamDisplayAgeGroup($group['ageGroups'] ?? []);
-            $data['ageGroup'] = 'AK '.($teamAge !== '' ? $teamAge : ($group['ageGroup'] !== '' ? $group['ageGroup'] : ''));
+            if ($this->allYearAgeGroups($group['ageGroups'] ?? [])) {
+                $data['ageGroup'] = 'Kür lt. CdP';
+            } else {
+                $data['ageGroup'] = 'AK '.($teamAge !== '' ? $teamAge : ($group['ageGroup'] !== '' ? $group['ageGroup'] : ''));
+            }
             // Unique, stable ordered names (alphabetical by last name then first name)
             $names = array_values(array_unique($group['names']));
             // Try to sort by last name (word after last space)
@@ -774,7 +784,7 @@ class PdfCertificateService
             $out[] = [
                 'name' => $this->toUtf8($fullName),
                 'club' => $this->toUtf8($club),
-                'ageGroup' => 'AK '.($age !== '' ? $age : ''),
+                'ageGroup' => ($this->isYearAgeGroup($age) ? 'Kür lt. CdP' : ('AK '.($age !== '' ? $age : ''))),
                 'points' => $this->formatPoints($total),
                 'ranking' => $rankByIndex[$i] ?? 0,
                 'total' => $total,
@@ -916,9 +926,12 @@ class PdfCertificateService
             $namesStr = implode(', ', array_map(fn ($n) => $this->toUtf8($n), $names));
 
             $teamAge = $this->computeTeamDisplayAgeGroup($g['ageGroups'] ?? []);
+            $ageDisplay = $this->allYearAgeGroups($g['ageGroups'] ?? [])
+                ? 'Kür lt. CdP'
+                : ('AK '.($teamAge !== '' ? $teamAge : ($g['ageGroup'] !== '' ? $g['ageGroup'] : '')));
             $out[] = [
                 'team' => $this->toUtf8($g['team']),
-                'ageGroup' => 'AK '.($teamAge !== '' ? $teamAge : ($g['ageGroup'] !== '' ? $g['ageGroup'] : '')),
+                'ageGroup' => $ageDisplay,
                 'names' => $namesStr,
                 'total' => $groupTotals[$key],
                 'points' => $this->formatPoints($groupTotals[$key]),
@@ -985,5 +998,42 @@ class PdfCertificateService
         }
 
         return '';
+    }
+
+    /**
+     * Detect if an ageGroup string represents a year (e.g., 2012) and not an age.
+     */
+    private function isYearAgeGroup(string $ageGroup): bool
+    {
+        if ($ageGroup === '') {
+            return false;
+        }
+        // Find a 4-digit number and check a reasonable range
+        if (preg_match('/(\d{4})/', $ageGroup, $m) !== 1) {
+            return false;
+        }
+        $year = (int) $m[1];
+
+        return $year >= 1900 && $year <= 2099;
+    }
+
+    /**
+     * Determine if all non-empty ageGroup values look like years.
+     */
+    private function allYearAgeGroups(array $ageGroups): bool
+    {
+        $hasAny = false;
+        foreach ($ageGroups as $ag) {
+            $s = trim((string) $ag);
+            if ($s === '') {
+                continue;
+            }
+            $hasAny = true;
+            if (! $this->isYearAgeGroup($s)) {
+                return false;
+            }
+        }
+
+        return $hasAny;
     }
 }
