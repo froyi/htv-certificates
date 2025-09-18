@@ -209,12 +209,20 @@ class PdfCertificateService
             $data['points'] = $this->formatPoints($total);
             $data['ranking'] = ($rankByIndex[$index] ?? 0).'.';
 
-            // Age group display: if year-like, show special label; otherwise prefix with AK
+            // Age group display for single certificates:
+            // - If year-like (Kür), show special label.
+            // - If numeric and between 9 and 11, consolidate to "AK 9-11".
+            // - Otherwise prefix with AK and the provided value.
             $rawAge = (string) ($data['ageGroup'] ?? '');
             if ($this->isYearAgeGroup($rawAge)) {
                 $data['ageGroup'] = 'Kür lt. CdP';
             } else {
-                $data['ageGroup'] = 'AK '.($rawAge !== '' ? $rawAge : '');
+                $ageNum = $this->extractAgeNumber($rawAge);
+                if ($ageNum !== null && $ageNum >= 9 && $ageNum <= 11) {
+                    $data['ageGroup'] = 'AK 9-11';
+                } else {
+                    $data['ageGroup'] = 'AK '.($rawAge !== '' ? $rawAge : '');
+                }
             }
 
             $data['today'] = $today;
@@ -786,7 +794,12 @@ class PdfCertificateService
             $out[] = [
                 'name' => $this->toUtf8($fullName),
                 'club' => $this->toUtf8($club),
-                'ageGroup' => ($this->isYearAgeGroup($age) ? 'Kür lt. CdP' : ('AK '.($age !== '' ? $age : ''))),
+                'ageGroup' => ($this->isYearAgeGroup($age)
+                                    ? 'Kür lt. CdP'
+                                    : ((($this->extractAgeNumber($age) ?? -1) >= 9 && ($this->extractAgeNumber($age) ?? -1) <= 11)
+                                        ? 'AK 9-11'
+                                        : ('AK '.($age !== '' ? $age : ''))
+                                    )),
                 'points' => $this->formatPoints($total),
                 'ranking' => $rankByIndex[$i] ?? 0,
                 'total' => $total,

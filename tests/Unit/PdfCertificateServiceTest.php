@@ -37,7 +37,7 @@ class PdfCertificateServiceTest extends TestCase
         usort($results, fn ($a, $b) => ($a['ranking'] <=> $b['ranking']) ?: strcmp($a['name'], $b['name']));
 
         $this->assertCount(3, $results);
-        $this->assertSame('AK 10', $results[0]['ageGroup']);
+        $this->assertSame('AK 9-11', $results[0]['ageGroup']);
         $this->assertSame('40,00', $results[0]['points']);
         $this->assertSame(1, $results[0]['ranking']);
         $this->assertSame(1, $results[1]['ranking'], 'Tie should share rank 1');
@@ -54,7 +54,7 @@ class PdfCertificateServiceTest extends TestCase
         $results = $service->computeSingleResultsFromCsv($path);
 
         $this->assertCount(2, $results);
-        $this->assertSame('AK 10', $results[0]['ageGroup']);
+        $this->assertSame('AK 9-11', $results[0]['ageGroup']);
         $this->assertSame('40,00', $results[0]['points']);
     }
 
