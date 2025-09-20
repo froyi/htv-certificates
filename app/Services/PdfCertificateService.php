@@ -183,7 +183,30 @@ class PdfCertificateService
             $rankByIndex[$originalIndex] = $lastRank;
         }
 
-        foreach ($records as $index => $row) {
+        // Determine the order of certificate pages: start with last place up to the best
+        $orderedIndices = array_keys($records);
+        usort($orderedIndices, function (int $a, int $b) use ($rankByIndex, $totals, $records): int {
+            $ra = $rankByIndex[$a] ?? PHP_INT_MAX;
+            $rb = $rankByIndex[$b] ?? PHP_INT_MAX;
+            // Higher rank number (worse place) should come first
+            if ($ra !== $rb) {
+                return $rb <=> $ra;
+            }
+            // If same rank, put lower total first
+            $ta = $totals[$a] ?? 0.0;
+            $tb = $totals[$b] ?? 0.0;
+            if ($ta !== $tb) {
+                return $ta <=> $tb;
+            }
+            // Final tie-breaker: alphabetical by full name for stability
+            $fa = trim(((string) ($records[$a]['firstname'] ?? '')).' '.((string) ($records[$a]['name'] ?? '')));
+            $fb = trim(((string) ($records[$b]['firstname'] ?? '')).' '.((string) ($records[$b]['name'] ?? '')));
+
+            return strcasecmp($fa, $fb);
+        });
+
+        foreach ($orderedIndices as $pos => $index) {
+            $row = $records[$index];
             // Normalize encoding to UTF-8
             $data = [];
 
@@ -227,7 +250,7 @@ class PdfCertificateService
 
             $data['today'] = $today;
 
-            $outputFile = $tmpDir.'/certificate_'.($index + 1).'.pdf';
+            $outputFile = $tmpDir.'/certificate_'.($pos + 1).'.pdf';
 
             $options = ['command' => $this->resolvePdftkBinary()];
             $pdf = new PdfTk($templatePath, $options);
@@ -423,7 +446,7 @@ class PdfCertificateService
             $rankByKey[$key] = $lastRank;
         }
 
-        // Generate PDFs (in sorted order)
+        // Generate PDFs (ordered from last place to first place)
         $tmpDir = storage_path('app/tmp_team_certificates_'.uniqid());
         if (! @mkdir($tmpDir) && ! is_dir($tmpDir)) {
             throw new RuntimeException('Konnte temporären Ordner für Mannschaften nicht erstellen.');
@@ -431,10 +454,31 @@ class PdfCertificateService
         $today = now()->format('d.m.Y');
         $generatedFiles = [];
 
-        foreach ($keys as $i => $key) {
+        // Determine the order of team certificate pages: worst rank first
+        $orderedKeys = array_keys($groups);
+        usort($orderedKeys, function (string $a, string $b) use ($rankByKey, $groupTotals, $groups): int {
+            $ra = $rankByKey[$a] ?? PHP_INT_MAX;
+            $rb = $rankByKey[$b] ?? PHP_INT_MAX;
+            // Higher rank number (worse place) should come first
+            if ($ra !== $rb) {
+                return $rb <=> $ra;
+            }
+            // If same rank, put lower total first
+            $ta = $groupTotals[$a] ?? 0.0;
+            $tb = $groupTotals[$b] ?? 0.0;
+            if ($ta !== $tb) {
+                return $ta <=> $tb;
+            }
+            // Final tie-breaker: alphabetical by team name for stability
+            $na = (string) ($groups[$a]['team'] ?? '');
+            $nb = (string) ($groups[$b]['team'] ?? '');
+
+            return strcasecmp($na, $nb);
+        });
+
+        foreach ($orderedKeys as $i => $key) {
             $group = $groups[$key];
             $data = [];
-            // For legacy CSVs without 'team', display the club name in the team field
             $data['team'] = $this->toUtf8($group['team']);
             $teamAge = $this->computeTeamDisplayAgeGroup($group['ageGroups'] ?? []);
             if ($this->allYearAgeGroups($group['ageGroups'] ?? [])) {
