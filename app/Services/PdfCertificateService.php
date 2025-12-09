@@ -65,7 +65,7 @@ class PdfCertificateService
      * Generate the single (individual) certificates PDF from a CSV file.
      *
      * Processing steps:
-     * 1) Locate the single certificate PDF template (template_brass.pdf) from common locations.
+     * 1) Locate the single certificate PDF template (template.pdf) from common locations.
      * 2) Detect CSV delimiter (comma/semicolon) and load records (header-aware or positional fallback).
      * 3) Compute each athlete's total = vault + unevenBars + balanceBeam + floor.
      * 4) Rank athletes using standard competition ranking (ties share the same rank, next rank is skipped).
@@ -84,13 +84,13 @@ class PdfCertificateService
         // Ensure the template exists (try multiple common locations)
         $candidates = [
             // Public disk (storage/app/public)
-            Storage::disk('public')->path('template_brass.pdf'),
+            Storage::disk('public')->path('template.pdf'),
             // Local/private disk (storage/app/private)
-            Storage::disk('local')->path('template_brass.pdf'),
+            Storage::disk('local')->path('template.pdf'),
             // Legacy location (storage/app)
-            storage_path('app/template_brass.pdf'),
+            storage_path('app/template.pdf'),
             // Repository location
-            resource_path('templates/template_brass.pdf'),
+            resource_path('templates/template.pdf'),
         ];
         $templatePath = null;
         foreach ($candidates as $candidate) {
@@ -101,7 +101,7 @@ class PdfCertificateService
         }
         if ($templatePath === null) {
             $paths = implode(', ', $candidates);
-            throw new RuntimeException('Die PDF-Vorlage template_brass.pdf wurde nicht gefunden. Versuchte Pfade: '.$paths);
+            throw new RuntimeException('Die PDF-Vorlage template.pdf wurde nicht gefunden. Versuchte Pfade: '.$paths);
         }
 
         // Read the CSV and detect delimiter (',' or ';')
@@ -295,7 +295,7 @@ class PdfCertificateService
      * Generate team certificates PDF from CSV file.
      *
      * Processing steps:
-     * 1) Locate the team certificate PDF template (template_brass_team.pdf).
+     * 1) Locate the team certificate PDF template (template_team.pdf).
      * 2) Detect CSV delimiter and load records (header-aware or positional fallback) using expected columns.
      * 3) Exclude rows with empty/placeholder teams.
      * 4) Group rows by team only (ageGroup is ignored for grouping); collect discipline scores and member names.
@@ -313,10 +313,10 @@ class PdfCertificateService
     {
         // Ensure the team template exists (try multiple common locations)
         $candidates = [
-            Storage::disk('public')->path('template_brass_team.pdf'),
-            Storage::disk('local')->path('template_brass_team.pdf'),
-            storage_path('app/template_brass_team.pdf'),
-            resource_path('templates/template_brass_team.pdf'),
+            Storage::disk('public')->path('template_team.pdf'),
+            Storage::disk('local')->path('template_team.pdf'),
+            storage_path('app/template_team.pdf'),
+            resource_path('templates/template_team.pdf'),
         ];
         $templatePath = null;
         foreach ($candidates as $candidate) {
@@ -327,7 +327,7 @@ class PdfCertificateService
         }
         if ($templatePath === null) {
             $paths = implode(', ', $candidates);
-            throw new RuntimeException('Die PDF-Vorlage template_brass_team.pdf wurde nicht gefunden. Versuchte Pfade: '.$paths);
+            throw new RuntimeException('Die PDF-Vorlage template_team.pdf wurde nicht gefunden. Versuchte Pfade: '.$paths);
         }
 
         // Read CSV records similar to single generation
